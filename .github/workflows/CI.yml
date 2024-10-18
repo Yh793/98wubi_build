@@ -80,6 +80,8 @@ jobs:
           sed -i '/File "LICENSE.txt"/a\ \ File "小狼毫98五笔版.html"' ./output/install.nsi
           sed -i '/CreateShortCut "\$SMPROGRAMS\\\$(DISPLAYNAME)\\\$(LNKFORUNINSTALL).lnk"/a \
             CreateShortCut "$DESKTOP\\小狼毫98五笔版.lnk" "$INSTDIR\\小狼毫98五笔版.html" "" "$INSTDIR\\小狼毫98五笔版.html" 0' ./output/install.nsi
+          sed -i 's#!insertmacro MUI_PAGE_LICENSE "LICENSE.txt"#!insertmacro MUI_PAGE_LICENSE "LICENSE.rtf"#g' ./output/install.nsi
+          sed -i '/Name "小狼毫98五笔专版 ${{ github.event.inputs.version }}"/a\BrandingText "Powered by 五笔小筑"' ./output/install.nsi
 
           # Uninstaller
           # backup
