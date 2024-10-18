@@ -1,0 +1,285 @@
+name: CI
+
+on:
+  schedule:
+    - cron: '0 16 * * *' # UTC 16:00 / GMT+8 0:00, daily
+  workflow_dispatch:
+    inputs:
+    #  release:
+    #    description: 'Release Build'
+    #    required: false
+    #    type: boolean
+      nightly:
+        description: 'Nightly Build'
+        required: false
+        type: boolean
+      version:
+        description: 'Version number'
+        required: true
+        default: "4.0.2.0"
+
+jobs:
+  build-and-release:
+    permissions:
+      contents: write
+    runs-on: windows-2019
+    env:
+      boost_version: 1.84.0
+      BOOST_ROOT: ${{ github.workspace }}\deps\boost_1_84_0
+    steps:
+      # 获取最新发布版本
+      - name: Get weasel latest release
+        id: weasel_latest_release
+        uses: pozetroninc/github-action-get-latest-release@master
+        with:
+          #repository: rime/weasel
+          owner: rime
+          repo: weasel
+          excludes: prerelease, draft
+
+      - name: Checkout weasel
+        uses: actions/checkout@v4
+        with:
+          repository: rime/weasel
+          ref: ${{ github.event.inputs.nightly == 'false' && steps.weasel_latest_release.outputs.release || '' }}
+          submodules: true
+          fetch-depth: 0
+
+      - name: Checkout 98wubi data
+        uses: actions/checkout@v4
+        with:
+          repository: yanhuacuo/weasel-data
+          path: 98wubi-data
+
+      - name: Checkout 98wubi res
+        uses: actions/checkout@v4
+        with:
+          path: 98wubi-res
+
+      - name: Customized Configuration
+        shell: bash
+        run: |
+          rm -rf output/data/*
+          cp -r 98wubi-data/Rime/* output/data
+          cp -r 98wubi-res/icons/* resource
+          cp -r 98wubi-res/res/* output
+          rm output/data/wubi98_*.txt
+          rm output/data/user.yaml
+          rm output/data/installation.yaml
+          rm -rf output/data/build/*
+          rm -rf output/data/build/opencc/*
+
+          sed -i "/bash plum\/rime-install %WEASEL_BUNDLED_RECIPES%/d" ./build.bat
+          sed -i "s#\!define WEASEL_ROOT \$INSTDIR\\\\weasel-\${WEASEL_VERSION}#\!define WEASEL_ROOT \$INSTDIR\\\\wubi98#g" ./output/install.nsi
+          sed -i "s#\!define MUI_ICON \.\.\\\\resource\\\\weasel.ico#\!define MUI_ICON \.\.\\\\resource\\\\wubi.ico#g" ./output/install.nsi
+          sed -i 's#OutFile "archives\\weasel-${PRODUCT_VERSION}-installer.exe"#OutFile "archives\\98wubi-${PRODUCT_VERSION}-installer.exe"#g' ./output/install.nsi
+          sed -i "s#Name \"小狼毫 \${WEASEL_VERSION}\"#Name \"小狼毫98五笔专版 ${{ github.event.inputs.version }}\"#g" ./output/install.nsi
+          sed -i 's#"DisplayVersion" "${WEASEL_VERSION}.${WEASEL_BUILD}"#"DisplayVersion" "${{ github.event.inputs.version }}"#g' ./output/install.nsi
+          sed -i 's#"Publisher" "式恕堂"#"Publisher" "98五笔小组"#g' ./output/install.nsi
+          sed -i 's#"URLInfoAbout" "https://rime.im/"#"URLInfoAbout" "https://wubi98.gitee.io/"#g' ./output/install.nsi
+          sed -i '/File "LICENSE.txt"/a\ \ File "小狼毫98五笔版.html"' ./output/install.nsi
+          sed -i '/CreateShortCut "\$SMPROGRAMS\\\$(DISPLAYNAME)\\\$(LNKFORUNINSTALL).lnk"/a \
+            CreateShortCut "$DESKTOP\\小狼毫98五笔版.lnk" "$INSTDIR\\小狼毫98五笔版.html" "" "$INSTDIR\\小狼毫98五笔版.html" 0' ./output/install.nsi
+
+          # Uninstaller
+          # backup
+          sed -i '/Section "Uninstall"/a \
+            ;backup\
+            ReadRegStr $R3 HKCU "SOFTWARE\\Rime\\Weasel" "RimeUserDir"\
+            ReadRegStr $R0 HKLM "SOFTWARE\\Rime\\Weasel" "InstallDir"\
+            StrCmp $R3 "" 0 +2\
+            StrCpy $R3 "$APPDATA\\Rime"\
+            IfFileExists "$R3\\*.*" 0 +7\
+            ${GetTime} "" "L" $0 $1 $2 $3 $4 $5 $6\
+            StrCpy $R4 "$2$1$0$4$5$6"\
+            StrCpy $R5 "$DESKTOP\\小狼毫98五笔个人档备份"\
+            CreateDirectory "$R5"\
+            CreateDirectory "$R5\\$R4"\
+            Delete /REBOOTOK "$R3\\user.yaml"\
+            Delete /REBOOTOK "$R3\\installation.yaml"\
+            CopyFiles /SILENT "$R3\\*.*" "$R5\\$R4"' ./output/install.nsi
+
+          # Remove registry keys
+          sed -i '/; Remove registry keys/a \
+            DeleteRegKey HKCU SOFTWARE\\Rime' ./output/install.nsi
+
+          # Remove files and uninstaller
+          sed -i '/RMDir \/REBOOTOK "\$INSTDIR"/a \
+            StrCmp $R0 "" +2\
+            RMDir /REBOOTOK "$R0"' ./output/install.nsi
+
+          sed -i '/Delete \/REBOOTOK "\$INSTDIR\\data\\opencc\\*.*"/a \
+            Delete /REBOOTOK "$INSTDIR\\data\\lua\\lib\\*.*"\
+            Delete /REBOOTOK "$INSTDIR\\data\\lua\\*.*"\
+            Delete /REBOOTOK "$INSTDIR\\data\\bin\\*.*"\
+            RMDir /REBOOTOK "$INSTDIR\\data\\lua\\lib"\
+            RMDir /REBOOTOK "$INSTDIR\\data\\lua"\
+            RMDir /REBOOTOK "$INSTDIR\\data\\bin"' ./output/install.nsi
+
+          sed -i '/RMDir \/REBOOTOK "\$SMPROGRAMS\\$(DISPLAYNAME)"/a \
+            Delete /REBOOTOK "$DESKTOP\\小狼毫98五笔版.lnk"\
+            Delete /REBOOTOK "$R3\\lua\\lib\\*.*"\
+            Delete /REBOOTOK "$R3\\lua\\*.*"\
+            Delete /REBOOTOK "$R3\\build\\*.*"\
+            Delete /REBOOTOK "$R3\\*.*"\
+            RMDir /REBOOTOK "$R3\\lua\\lib"\
+            RMDir /REBOOTOK "$R3\\lua"\
+            RMDir /REBOOTOK "$R3\\build"\
+            RMDir /REBOOTOK "$R3"' ./output/install.nsi   
+
+          # Copy lua
+          sed -i '/File "WeaselSetup.exe"/a \
+            ; lua\
+            SetOutPath $INSTDIR\\data\
+            File "data\\*.lua"\
+            SetOutPath $INSTDIR\\data\\lua\
+            File "data\\lua\\*.lua"\
+            File "data\\lua\\*.txt"\
+            SetOutPath $INSTDIR\\data\\lua\\lib\
+            File "data\\lua\\lib\\*.lua"' ./output/install.nsi
+
+          # shared data files
+          sed -i '/ExecWait "\$INSTDIR\\WeaselDeployer.exe \/install"/a \
+              ReadRegStr $R3 HKCU "SOFTWARE\\Rime\\Weasel" "RimeUserDir"\
+              StrCmp $R3 "" 0 +2\
+              StrCpy $R3 "$APPDATA\\Rime"\
+              SetOverwrite try\
+              AllowSkipFiles on\
+              SetOutPath $R3\
+              File "data\\*.yaml"\
+              File "data\\*.lua"\
+              SetOutPath "$R3\\lua"\
+              File "data\\lua\\*.lua"\
+              SetOutPath "$R3\\lua\\lib"\
+              File "data\\lua\\lib\\*.lua"' ./output/install.nsi
+
+          sed -i "/Goto deploy_done/d" ./output/install.nsi
+          sed -i "/deploy_done:/d" ./output/install.nsi
+
+          # Install fonts
+          sed -i '/; weasel installation script/a !include WinMessages.nsh' ./output/install.nsi
+          
+          sed -i '/; Optional section (can be disabled by the user)/i \
+          Section "Install Fonts"\
+            ; clean font\
+            System::Call "GDI32::RemoveFontResource(t) i ('\''98WB-0.otf'\'') .s"\
+            DeleteRegValue HKLM "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts" "98WB-0 (OpenType)"\
+            DeleteRegValue HKLM "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\FontLink\\SystemLink" "98WB-0"\
+            Delete /REBOOTOK "$LOCALAPPDATA\\Microsoft\\Windows\\Fonts\\98WB-*.otf"\
+            Delete /REBOOTOK "$FONTS\\98WB-*.otf"\
+            ; install font\
+            SetOutPath "$FONTS"\
+            File "98WB-0.otf"\
+            WriteRegStr HKLM "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts" "98WB-0 (OpenType)" "98WB-0.otf"\
+            System::Call "GDI32::AddFontResource(t) i ('\''98WB-0.otf'\'') .s"\
+            WriteRegMultiStr /REGEDIT5 HKLM "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\FontLink\\SystemLink" "98WB-0" 4d,00,53,00,59,00,48,00,2e,00,54,00,54,00,43,00,2c,00,4d,00,69,\\\
+            00,63,00,72,00,6f,00,73,00,6f,00,66,00,74,00,20,00,59,00,61,00,48,00,65,00,\\\
+            69,00,20,00,55,00,49,00,2c,00,31,00,32,00,38,00,2c,00,39,00,36,00,00,00,4d,\\\
+            00,53,00,59,00,48,00,2e,00,54,00,54,00,43,00,2c,00,4d,00,69,00,63,00,72,00,\\\
+            6f,00,73,00,6f,00,66,00,74,00,20,00,59,00,61,00,48,00,65,00,69,00,20,00,55,\\\
+            00,49,00,00,00,4d,00,53,00,59,00,48,00,2e,00,54,00,54,00,46,00,2c,00,31,00,\\\
+            32,00,38,00,2c,00,39,00,36,00,00,00,53,00,45,00,47,00,55,00,49,00,53,00,59,\\\
+            00,4d,00,2e,00,54,00,54,00,46,00,2c,00,53,00,65,00,67,00,6f,00,65,00,20,00,\\\
+            55,00,49,00,20,00,53,00,79,00,6d,00,62,00,6f,00,6c,00,00,00,53,00,45,00,47,\\\
+            00,4f,00,45,00,55,00,49,00,2e,00,54,00,54,00,46,00,2c,00,53,00,65,00,67,00,\\\
+            6f,00,65,00,20,00,55,00,49,00,2c,00,31,00,32,00,30,00,2c,00,38,00,30,00,00,\\\
+            00,53,00,45,00,47,00,4f,00,45,00,55,00,49,00,2e,00,54,00,54,00,46,00,2c,00,\\\
+            53,00,65,00,67,00,6f,00,65,00,20,00,55,00,49,00,00,00,00,00\
+            SendMessage ${HWND_BROADCAST} ${WM_FONTCHANGE} 0 0\
+          SectionEnd' ./output/install.nsi
+
+      - name: Configure build environment
+        shell: bash
+        run: |
+          cp env.vs2019.bat env.bat
+
+      # cache boost
+      - name: Cache Boost
+        id: cache-boost
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.BOOST_ROOT }}
+          key: ${{ runner.os }}-boost-${{ env.boost_version }}
+
+      # install boost if not cached
+      - name: Install Boost
+        if: steps.cache-boost.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          ./install_boost.bat
+          ./build.bat boost arm64
+
+      # add msbuild to PATH
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      # use upper stream released librime files if stable release
+      - name: Copy Rime files
+        run: |
+          .\github.install.bat
+
+      - name: Build data
+        run: |
+          .\build.bat data
+
+      - name: Simplify OpenCC
+        shell: bash
+        run: |
+          find ./librime/share/opencc -type f \
+            ! \( -name 's2t.json' -o -name 'STCharacters.ocd2' -o -name 'STPhrases.ocd2' \) \
+            -exec rm {} +
+          find ./output/data/opencc -type f \
+            ! \( -name 's2t.json' -o -name 'STCharacters.ocd2' -o -name 'STPhrases.ocd2' \) \
+            -exec rm {} +
+
+      - name: Build Weasel Release
+        id: build_weasel
+        if: ${{ github.event.inputs.nightly == 'false' }} 
+        env:
+          RELEASE_BUILD: 1
+        run: |
+          .\build.bat arm64 installer
+
+      - name: Build Weasel Nightly
+        id: build_weasel_nightly
+        if: ${{ github.event_name == 'schedule' || github.event.inputs.nightly == 'true' }}
+        run: |
+          .\build.bat arm64 installer
+
+      - name: Compress Debug Symbols
+        shell: pwsh
+        run: |
+          output\7z.exe a -t7z "./output/archives/debug_symbols.7z" "output/*.pdb" -r
+
+      # create nightly release
+      - name: Create Nightly release
+        if: ${{ steps.build_weasel_nightly.outcome == 'success' }}
+        uses: 'marvinpinto/action-automatic-releases@latest'
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          automatic_release_tag: latest
+          prerelease: true
+          title: "Nightly Build"
+          files: |
+            ./output/archives/*.exe
+            ./output/archives/debug_symbols.7z
+        
+      # create stable release
+      - name: Release
+        if: ${{ steps.build_weasel.outcome == 'success' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.weasel_latest_release.outputs.release }}
+          files: |
+            ./output/archives/*.exe
+            ./output/archives/debug_symbols.7z
+            
+      - name: Upload
+        if: ${{ steps.build_weasel_nightly.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Weasel
+          path: |
+            ./output/install.nsi
+          if-no-files-found: error
