@@ -155,18 +155,36 @@ jobs:
 
           sed -i "/Goto deploy_done/d" ./output/install.nsi
           sed -i "/deploy_done:/d" ./output/install.nsi
+          
+          # clean font
+          sed -i '/; The stuff to install/i \
+          Function CheckRebootAndProceed\
+            IfRebootFlag 0 noRebootNeeded\
+            MessageBox MB_YESNO|MB_ICONQUESTION "安装未完成！$\\n安装程序需要重启计算机清理残留字体以完成更改。$\\n重启计算机之后请重新运行安装包。$\\n是否立即重启？" IDYES rebootNow IDNO rebootReminde\
+            noRebootNeeded:\
+              Return\
+            rebootNow:\
+              Reboot\
+            rebootReminde:\
+              MessageBox MB_OK "请重启完成字体清理之后重新安装！"\
+              Quit\
+          FunctionEnd\
+          \
+          Section "Clean Font"\
+            System::Call "GDI32::RemoveFontResource(t) i ('\''98WB-0.otf'\'') .s"\
+            DeleteRegValue HKCU "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts" "98WB-0 (TrueType)"\
+            DeleteRegValue HKLM "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts" "98WB-0 (OpenType)"\
+            DeleteRegValue HKLM "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\FontLink\\SystemLink" "98WB-0"\
+            Delete /REBOOTOK "$LOCALAPPDATA\\Microsoft\\Windows\\Fonts\\98WB-0.otf"\
+            Delete /REBOOTOK "$FONTS\\98WB-0.otf"\
+            Call CheckRebootAndProceed\
+          SectionEnd' ./output/install.nsi
 
           # Install fonts
           sed -i '/; weasel installation script/a !include WinMessages.nsh' ./output/install.nsi
           
           sed -i '/; Optional section (can be disabled by the user)/i \
           Section "Install Fonts"\
-            ; clean font\
-            System::Call "GDI32::RemoveFontResource(t) i ('\''98WB-0.otf'\'') .s"\
-            DeleteRegValue HKLM "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts" "98WB-0 (OpenType)"\
-            DeleteRegValue HKLM "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\FontLink\\SystemLink" "98WB-0"\
-            Delete /REBOOTOK "$LOCALAPPDATA\\Microsoft\\Windows\\Fonts\\98WB-*.otf"\
-            Delete /REBOOTOK "$FONTS\\98WB-*.otf"\
             ; install font\
             SetOutPath "$FONTS"\
             File "98WB-0.otf"\
