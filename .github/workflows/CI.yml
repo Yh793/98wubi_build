@@ -174,7 +174,7 @@ jobs:
           Section "Clean Font"\
             System::Call "GDI32::RemoveFontResource(t) i ('\''98WB-0.otf'\'') .s"\
             DeleteRegValue HKCU "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts" "98WB-0 (TrueType)"\
-            DeleteRegValue HKLM "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts" "98WB-0 (OpenType)"\
+            DeleteRegValue HKLM "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts" "98WB-0 (TrueType)"\
             DeleteRegValue HKLM "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\FontLink\\SystemLink" "98WB-0"\
             Delete /REBOOTOK "$LOCALAPPDATA\\Microsoft\\Windows\\Fonts\\98WB-0.otf"\
             Delete /REBOOTOK "$FONTS\\98WB-0.otf"\
