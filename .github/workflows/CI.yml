@@ -96,8 +96,8 @@ jobs:
             StrCpy $R5 "$DESKTOP\\小狼毫98五笔个人档备份"\
             CreateDirectory "$R5"\
             CreateDirectory "$R5\\$R4"\
-            Delete /REBOOTOK "$R3\\user.yaml"\
-            Delete /REBOOTOK "$R3\\installation.yaml"\
+            ;Delete /REBOOTOK "$R3\\user.yaml"\
+            ;Delete /REBOOTOK "$R3\\installation.yaml"\
             CopyFiles /SILENT "$R3\\*.*" "$R5\\$R4"' ./output/install.nsi
 
           # Remove registry keys
