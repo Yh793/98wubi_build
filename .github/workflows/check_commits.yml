@@ -1,0 +1,52 @@
+name: Check Commits
+
+on:
+  schedule:
+    - cron: '0 16 * * *'  # UTC 16:00 / GMT+8 0:00, daily
+  workflow_dispatch:
+
+jobs:
+  check_recent_commits:
+    runs-on: ubuntu-latest
+    outputs:
+      recent_commits: ${{ steps.check_for_commits.outputs.recent_commits }}
+    steps:
+      # Step 1: Checkout the code
+      - uses: actions/checkout@v4
+        with:
+          repository: rime/weasel
+          fetch-depth: 0  # 拉取所有提交历史以便使用 git log 检查
+
+      # Step 2: Check for commits in the last 24 hours
+      - name: Check for commits in the last 24 hours
+        id: check_for_commits
+        run: |
+          RECENT_COMMITS=$(git log --since="24 hours ago" --format="%H")
+          if [ -z "$RECENT_COMMITS" ]; then
+            echo "No commits in the last 24 hours."
+            echo "recent_commits=" >> $GITHUB_OUTPUT
+          else
+            echo "Commits in the last 24 hours: $RECENT_COMMITS"
+            echo "recent_commits=$RECENT_COMMITS" >> $GITHUB_OUTPUT
+          fi
+
+  next_job:
+    needs: [check_recent_commits]
+    if: ${{ needs.check_recent_commits.outputs.recent_commits != '' }}
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+  build:
+    needs: [next_job]
+    uses: ./.github/workflows/CI.yml
+    with:
+      prerelease: true
+      release: false
+      target: 'master'
+    permissions:
+      contents: write
+      packages: write  # For package cache
+      actions: write  # For cleaning up cache
+      id-token: write  # mandatory for trusted publishing
+    secrets: inherit

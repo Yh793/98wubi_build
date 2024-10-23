@@ -1,22 +1,37 @@
 name: CI
 
 on:
-  schedule:
-    - cron: '0 16 * * *' # UTC 16:00 / GMT+8 0:00, daily
+  workflow_call:
+    inputs:
+      prerelease:
+        required: false
+        type: boolean
+      release:
+        required: false
+        type: boolean
+      target:
+        required: false
+        default: ''
+        type: string
   workflow_dispatch:
     inputs:
-    #  release:
-    #    description: 'Release Build'
-    #    required: false
-    #    type: boolean
-      nightly:
+      prerelease:
         description: 'Nightly Build'
+        required: false
+        default: true
+        type: boolean
+      release:
+        description: 'Release Build'
         required: false
         type: boolean
       version:
         description: 'Version number'
         required: true
         default: "4.0.2.0"
+        type: string
+        
+permissions:
+  contents: read
 
 jobs:
   build-and-release:
@@ -27,21 +42,11 @@ jobs:
       boost_version: 1.84.0
       BOOST_ROOT: ${{ github.workspace }}\deps\boost_1_84_0
     steps:
-      # 获取最新发布版本
-      - name: Get weasel latest release
-        id: weasel_latest_release
-        uses: pozetroninc/github-action-get-latest-release@master
-        with:
-          #repository: rime/weasel
-          owner: rime
-          repo: weasel
-          excludes: prerelease, draft
-
       - name: Checkout weasel
         uses: actions/checkout@v4
         with:
           repository: rime/weasel
-          ref: ${{ github.event.inputs.nightly == 'false' && steps.weasel_latest_release.outputs.release || '' }}
+          ref: ${{ inputs.target }}
           submodules: true
           fetch-depth: 0
 
@@ -235,7 +240,7 @@ jobs:
 
       - name: Build Weasel Release
         id: build_weasel
-        if: ${{ github.event.inputs.nightly == 'false' }} 
+        if: ${{ inputs.release }}
         env:
           RELEASE_BUILD: 1
         run: |
@@ -243,7 +248,7 @@ jobs:
 
       - name: Build Weasel Nightly
         id: build_weasel_nightly
-        if: ${{ github.event_name == 'schedule' || github.event.inputs.nightly == 'true' }}
+        if: ${{ inputs.prerelease }}
         run: |
           .\build.bat arm64 installer
 

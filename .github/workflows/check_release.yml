@@ -1,0 +1,50 @@
+name: Check Release
+
+on:
+  schedule:
+    - cron: '0 16 * * *' # UTC 16:00 / GMT+8 0:00, daily
+  workflow_dispatch:
+
+jobs:
+  check_recent_release:
+    runs-on: ubuntu-latest
+    outputs:
+      latest_release: ${{ steps.check_for_release.outputs.latest_release }}
+    steps:
+      - uses: actions/checkout@v4
+      # Step 1: Check for the latest release using GitHub API
+      - name: Check for latest release
+        id: check_for_release
+        run: |
+          # 获取最新的 release 信息
+          LATEST_RELEASE=$(curl -s https://api.github.com/repos/rime/weasel/releases/latest | jq -r '.tag_name')
+          RELEASE_DATE=$(curl -s https://api.github.com/repos/rime/weasel/releases/latest | jq -r '.published_at')
+          # 转换发布日期为 UNIX 时间戳
+          RELEASE_TIMESTAMP=$(date -d "$RELEASE_DATE" +%s)
+          # 获取当前时间的 UNIX 时间戳
+          CURRENT_TIMESTAMP=$(date +%s)
+          # 计算最近 24 小时的秒数 (86400 秒)
+          let TIME_DIFF=$CURRENT_TIMESTAMP-$RELEASE_TIMESTAMP
+          if [ $TIME_DIFF -le 86400 ]; then
+            echo "Latest release $LATEST_RELEASE was published in the last 24 hours."
+            echo "latest_release=$LATEST_RELEASE" >> $GITHUB_OUTPUT
+          else
+            echo "No releases in the last 24 hours."
+            echo "latest_release=" >> $GITHUB_OUTPUT
+          fi
+
+  next_job:
+    needs: [check_recent_release]
+    if: ${{ needs.check_recent_release.outputs.latest_release != '' }}
+    uses: ./.github/workflows/CI.yml
+    with:
+      prerelease: false
+      release: true
+      target: ${{ needs.check_recent_release.outputs.latest_release }}
+    permissions:
+      contents: write
+      packages: write  # For package cache
+      actions: write  # For cleaning up cache
+      id-token: write  # mandatory for trusted publishing
+    secrets: inherit
+
